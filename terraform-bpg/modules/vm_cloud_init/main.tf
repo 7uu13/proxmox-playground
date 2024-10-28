@@ -1,60 +1,3 @@
-resource "proxmox_virtual_environment_vm" "ubuntu_vm" {
-  for_each = { for key, value in var.cloud_init_virtual_machines : key => value if startswith(value.vm_image_name, "jammy") == true }
-  name      = each.value.hostname
-  node_name = each.value.node_name
-  vm_id = each.value.pve_vm_id
-
-  initialization {
-    ip_config {
-      ipv4 {
-        #address = "dhcp"
-        address = each.value.ip_address
-        gateway = each.value.gateway
-      }
-    }
-
-    user_data_file_id = "local:snippets/cloud_init_${each.value.hostname}.yml"
-  }
-
-  stop_on_destroy = true
-
-  startup {
-    order      = "3"
-    up_delay   = "60"
-    down_delay = "60"
-  }
-
-  cpu {
-    cores        = each.value.cpu_cores
-    type         = "qemu64"
-  }
-
-  memory {
-    dedicated = each.value.memory
-  }
-
-  operating_system {
-    type = each.value.qemu_os
-  }
-
-  agent {
-    enabled = false
-  }
-
-  network_device {
-    bridge = "vmbr0"
-  }
-
-  disk {
-    datastore_id = each.value.storage
-    file_id      = each.value.image_name
-    interface    = "virtio0"
-    iothread     = true
-    discard      = "on"
-    size         = each.value.disk_size
-  }
-}
-
 data "template_file" "cloud_init" {
   for_each = var.cloud_init_virtual_machines
 
@@ -85,6 +28,75 @@ resource "null_resource" "cloud_init" {
   provisioner "file" {
     source      = local_file.cloud_init[each.key].filename
     destination = "/var/lib/vz/snippets/cloud_init_${each.value.hostname}.yml"
+  }
+
+  provisioner "remote-exec" {
+    when = destroy
+    inline = [ 
+      "rm -f /var/lib/vz/snippets/cloud_init_${each.value.hostname}.yml"
+     ]
+  }
+}
+
+resource "proxmox_virtual_environment_vm" "ubuntu_vm" {
+  for_each = { for key, value in var.cloud_init_virtual_machines : key => value if startswith(value.vm_image_name, "jammy") == true }
+  name      = each.value.hostname
+  node_name = each.value.node_name
+  vm_id = each.value.pve_vm_id
+
+  initialization {
+    ip_config {
+      ipv4 {
+        #address = "dhcp"
+        address = each.value.ip_address
+        gateway = each.value.gateway
+      }
+    }
+
+    user_account {
+      username = "user"
+      password = "tere"
+    }
+
+    user_data_file_id = "local:snippets/cloud_init_${each.value.hostname}.yml"
+  }
+
+  stop_on_destroy = true
+
+  startup {
+    order      = "3"
+    up_delay   = "60"
+    down_delay = "60"
+  }
+
+  cpu {
+    cores        = each.value.cpu_cores
+    #type         = "qemu64"
+  }
+
+  memory {
+    dedicated = each.value.memory
+  }
+
+  operating_system {
+    type = each.value.qemu_os
+  }
+
+  agent {
+    enabled = false
+  }
+
+  network_device {
+    bridge = "vmbr0"
+  }
+
+  disk {
+    datastore_id = each.value.storage
+    file_id      = each.value.image_name
+    interface    = "scsi0"
+    #iothread     = true
+    discard      = "on"
+    size         = each.value.disk_size
   }
 }
 
